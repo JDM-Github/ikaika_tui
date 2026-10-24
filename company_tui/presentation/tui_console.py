@@ -14,6 +14,12 @@ from company_tui.application.app import Application
 from company_tui.application.updates import UpdateWatch
 from company_tui.domain import naming
 from company_tui.domain.capability import Capability
+from company_tui.domain.deployment import (
+    DeploymentEnvironment,
+    DeploymentGroup,
+    DeploymentOperation,
+    DeploymentProject,
+)
 from company_tui.domain.options import Option, OptionValue
 from company_tui.domain.recent import RecentPathsPort
 from company_tui.domain.script_config import (
@@ -75,6 +81,10 @@ TRAIL_STEPS = (
     "template_pack",
     "script_section",
     "script_action",
+    "deployment_project",
+    "deployment_environment",
+    "deployment_group",
+    "deployment_operation",
 )
 """Every menu a workflow can walk, in the order it walks them.
 
@@ -1642,6 +1652,123 @@ class TuiConsole(App):
             return None
         self._record("script_action", actions[index].name, actions[index])
         return actions[index]
+
+    async def choose_deployment_project(
+        self, projects: Sequence[DeploymentProject], notice: str = ""
+    ) -> DeploymentProject | None:
+        await self._claim_screen(current_session())
+        trail = self._enter_step("deployment_project")
+        index = await self.push_screen_wait(
+            CardMenuScreen(
+                "Choose a project",
+                [
+                    MenuEntry(
+                        project.id,
+                        project.name,
+                        project.description,
+                        detail=project.description,
+                    )
+                    for project in projects
+                ],
+                subtitle="Choose the project whose deployment catalog you want.",
+                trail=trail,
+                notice=notice,
+                runs=self._sessions.summary(),
+            )
+        )
+        if index is None:
+            return None
+        self._record("deployment_project", projects[index].name, projects[index])
+        return projects[index]
+
+    async def choose_deployment_environment(
+        self, environments: Sequence[DeploymentEnvironment], notice: str = ""
+    ) -> DeploymentEnvironment | None:
+        await self._claim_screen(current_session())
+        trail = self._enter_step("deployment_environment")
+        index = await self.push_screen_wait(
+            CardMenuScreen(
+                "Choose an environment",
+                [
+                    MenuEntry(
+                        environment.key,
+                        environment.label,
+                        environment.description,
+                        detail=environment.description,
+                    )
+                    for environment in environments
+                ],
+                subtitle="Local and Test run here. Production uses the approval broker.",
+                trail=trail,
+                notice=notice,
+                runs=self._sessions.summary(),
+            )
+        )
+        if index is None:
+            return None
+        self._record(
+            "deployment_environment", environments[index].label, environments[index]
+        )
+        return environments[index]
+
+    async def choose_deployment_group(
+        self, groups: Sequence[DeploymentGroup], notice: str = ""
+    ) -> DeploymentGroup | None:
+        await self._claim_screen(current_session())
+        trail = self._enter_step("deployment_group")
+        index = await self.push_screen_wait(
+            CardMenuScreen(
+                "Choose an operation group",
+                [
+                    MenuEntry(
+                        group.id,
+                        group.label,
+                        group.description,
+                        detail=group.description,
+                    )
+                    for group in groups
+                ],
+                subtitle="The catalog groups operations by what they change.",
+                trail=trail,
+                notice=notice,
+                runs=self._sessions.summary(),
+            )
+        )
+        if index is None:
+            return None
+        self._record("deployment_group", groups[index].label, groups[index])
+        return groups[index]
+
+    async def choose_deployment_operation(
+        self, operations: Sequence[DeploymentOperation], notice: str = ""
+    ) -> DeploymentOperation | None:
+        await self._claim_screen(current_session())
+        trail = self._enter_step("deployment_operation")
+        index = await self.push_screen_wait(
+            CardMenuScreen(
+                "Choose an operation",
+                [
+                    MenuEntry(
+                        operation.id,
+                        operation.label,
+                        operation.description,
+                        self._sessions.running_under((*trail, operation.label)),
+                        f"[{operation.risk.upper()}] {operation.description}",
+                    )
+                    for operation in operations
+                ],
+                subtitle="Read from the project's deployment catalog.",
+                trail=trail,
+                notice=notice,
+                runs=self._sessions.summary(),
+            )
+        )
+        if index is None:
+            return None
+        self._record(
+            "deployment_operation", operations[index].label, operations[index]
+        )
+        return operations[index]
 
     async def choose_script_update(
         self, catalogue: ScriptCatalogue

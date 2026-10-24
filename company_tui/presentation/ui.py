@@ -2,6 +2,12 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol, TypeVar
 
 from company_tui.domain.capability import Capability
+from company_tui.domain.deployment import (
+    DeploymentEnvironment,
+    DeploymentGroup,
+    DeploymentOperation,
+    DeploymentProject,
+)
 from company_tui.domain.options import Option, OptionValue, RefreshOutcome
 from company_tui.domain.script_config import (
     ScriptAction,
@@ -197,5 +203,21 @@ class Ui(Protocol):
         Esc puts the stack menu back with nothing decided.
         """
         ...
+
+    async def choose_deployment_project(
+        self, projects: Sequence[DeploymentProject], notice: str = ""
+    ) -> DeploymentProject | None: ...
+
+    async def choose_deployment_environment(
+        self, environments: Sequence[DeploymentEnvironment], notice: str = ""
+    ) -> DeploymentEnvironment | None: ...
+
+    async def choose_deployment_group(
+        self, groups: Sequence[DeploymentGroup], notice: str = ""
+    ) -> DeploymentGroup | None: ...
+
+    async def choose_deployment_operation(
+        self, operations: Sequence[DeploymentOperation], notice: str = ""
+    ) -> DeploymentOperation | None: ...
 
     async def pause(self) -> None: ...

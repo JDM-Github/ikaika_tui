@@ -2,6 +2,12 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TypeVar
 
 from company_tui.domain.capability import Capability
+from company_tui.domain.deployment import (
+    DeploymentEnvironment,
+    DeploymentGroup,
+    DeploymentOperation,
+    DeploymentProject,
+)
 from company_tui.domain.options import Option, OptionKind, OptionValue
 from company_tui.domain.script_config import (
     ScriptAction,
@@ -131,6 +137,58 @@ class PlainConsole:
         if index is None:
             return None
         return actions[index]
+
+    async def choose_deployment_project(
+        self, projects: Sequence[DeploymentProject], notice: str = ""
+    ) -> DeploymentProject | None:
+        if notice:
+            self.error(notice)
+        index = await self._select(
+            "Choose a project",
+            [(project.name, project.description) for project in projects],
+        )
+        if index is None:
+            return None
+        return projects[index]
+
+    async def choose_deployment_environment(
+        self, environments: Sequence[DeploymentEnvironment], notice: str = ""
+    ) -> DeploymentEnvironment | None:
+        if notice:
+            self.error(notice)
+        index = await self._select(
+            "Choose an environment",
+            [(environment.label, environment.description) for environment in environments],
+        )
+        if index is None:
+            return None
+        return environments[index]
+
+    async def choose_deployment_group(
+        self, groups: Sequence[DeploymentGroup], notice: str = ""
+    ) -> DeploymentGroup | None:
+        if notice:
+            self.error(notice)
+        index = await self._select(
+            "Choose an operation group",
+            [(group.label, group.description) for group in groups],
+        )
+        if index is None:
+            return None
+        return groups[index]
+
+    async def choose_deployment_operation(
+        self, operations: Sequence[DeploymentOperation], notice: str = ""
+    ) -> DeploymentOperation | None:
+        if notice:
+            self.error(notice)
+        index = await self._select(
+            "Choose an operation",
+            [(operation.label, f"[{operation.risk.upper()}] {operation.description}") for operation in operations],
+        )
+        if index is None:
+            return None
+        return operations[index]
 
     async def choose_script_update(
         self, catalogue: ScriptCatalogue

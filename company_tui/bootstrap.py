@@ -83,7 +83,7 @@ def _build_capability_registry(console: Ui) -> CapabilityRegistry:
                 console=console, pack_registry=pack_registry, locks=DestinationLocks()
             ),
             BuildCapability(console=console, pack_registry=pack_registry),
-            DeployCapability(console=console),
+            DeployCapability(console=console, process_runner=process_runner),
             ScriptsCapability(console=console, services=services),
             SettingsCapability(
                 console=console, config=config, pack_registry=pack_registry
