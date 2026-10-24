@@ -73,6 +73,7 @@ class DeploymentRun:
     path: str = ""
     command: str = ""
     args: tuple[str, ...] = ()
+    repo: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +289,7 @@ def load_catalog(path: Path) -> DeploymentCatalog:
                     path=str(run.get("path", "") or ""),
                     command=str(run.get("command", "") or ""),
                     args=tuple(str(argument) for argument in (run.get("args", []) or [])),
+                    repo=str(run.get("repo", "") or ""),
                 ),
             )
         )

@@ -123,6 +123,38 @@ class CommandTest(unittest.TestCase):
         self.assertEqual("test", command[-1])
         self.assertIn("check-health.ps1", command[3])
 
+    def test_a_portal_operation_uses_the_sibling_portal_checkout(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "admin" / "deployment").mkdir(parents=True)
+            (root / "ikaika-portal" / "deployment").mkdir(parents=True)
+            (root / "ikaika-portal" / "script.ps1").write_text("", encoding="utf-8")
+            project = DeploymentProject(
+                id="admin",
+                name="IKAIKA Admin",
+                description="The admin API.",
+                root=root / "admin",
+                catalog=root / "admin" / "deployment" / "operations.json",
+                environments=(),
+            )
+            operation = DeploymentOperation(
+                id="deploy.portal.test",
+                label="Deploy portal",
+                group="Deploy",
+                description="Deploy it.",
+                environments=("test",),
+                risk="write",
+                auth="none",
+                parameters=(),
+                run=DeploymentRun(
+                    type="script",
+                    path="deployment/deploy.ps1",
+                    repo="portal",
+                ),
+            )
+            command = command_for(project, operation, "test", {})
+            self.assertIn(str(root / "ikaika-portal" / "deployment" / "deploy.ps1"), command)
+
     def test_resolves_a_value_file(self):
         operation = DeploymentOperation(
             id="switch.test",

@@ -7,6 +7,7 @@ which holds the production credentials.
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import shutil
@@ -40,6 +41,16 @@ def _pwsh() -> str:
     return shutil.which("pwsh") or "pwsh"
 
 
+def _run_root(project: DeploymentProject, run) -> Path:
+    if run.repo == "portal":
+        for name in ("ikaika-portal", "ikaika_portal_frontend_rewrite"):
+            candidate = project.root.parent / name
+            if (candidate / "script.ps1").is_file():
+                return candidate
+        return project.root.parent / "ikaika-portal"
+    return project.root
+
+
 def command_for(
     project: DeploymentProject,
     operation: DeploymentOperation,
@@ -49,15 +60,16 @@ def command_for(
 ) -> tuple[str, ...]:
     """Build the exact command for one operation, without a shell."""
     run = operation.run
+    root = _run_root(project, run)
     if run.type == "script":
         if not run.path:
             raise DeploymentError(f"{operation.id} has no script path.")
-        executable = project.root / run.path
+        executable = root / run.path
         prefix = (_pwsh(), "-NoProfile", "-File", str(executable))
     elif run.type == "toolkit":
         if not run.command:
             raise DeploymentError(f"{operation.id} has no toolkit command.")
-        prefix = (_pwsh(), "-NoProfile", "-File", str(project.root / "script.ps1"), run.command)
+        prefix = (_pwsh(), "-NoProfile", "-File", str(root / "script.ps1"), run.command)
     elif run.type == "internal":
         raise DeploymentError(f"{operation.id} is an internal operation.")
     else:
@@ -80,6 +92,7 @@ class DeployCapability(Capability):
         self._console = console
         self._process_runner = process_runner
         self._registry_path = registry_path
+        self._state_cache: dict[tuple[str, str], dict] = {}
 
     @property
     def info(self) -> CapabilityInfo:
@@ -141,11 +154,18 @@ class DeployCapability(Capability):
                     continue
 
             options = self._options(project, environment, operation)
+            note = await self._state_note(project, environment, operation)
+            subtitle = operation.description
+            if note:
+                subtitle = f"{subtitle}\nCurrent: {note}"
             values = await self._console.open_run_panel(
                 operation.label,
                 options,
                 trail=(project.name, environment.label, group.label),
-                subtitle=operation.description,
+                subtitle=subtitle,
+                preview=lambda values, p=project, o=operation, e=environment: self._preview(
+                    p, o, e, values
+                ),
             )
             if values is None:
                 continue
@@ -164,6 +184,73 @@ class DeployCapability(Capability):
             ):
                 continue
             return result.exit_code
+
+    def _preview(
+        self,
+        project: DeploymentProject,
+        operation: DeploymentOperation,
+        environment: DeploymentEnvironment,
+        values: dict[str, OptionValue],
+    ) -> str:
+        if operation.run.type == "internal":
+            return "Read the local DevTools audit log."
+        try:
+            command = command_for(
+                project,
+                operation,
+                environment.key,
+                {key: str(value) for key, value in values.items()},
+                "<temporary value file>",
+            )
+        except DeploymentError as error:
+            return str(error)
+        return shlex.join(command)
+
+    async def _switch_state(self, project: DeploymentProject, environment: str) -> dict:
+        key = (project.id, environment)
+        if key in self._state_cache:
+            return self._state_cache[key]
+        script = project.root / "deployment" / "switch-state.ps1"
+        if not script.is_file():
+            self._state_cache[key] = {}
+            return {}
+        result = await self._process_runner.capture(
+            (_pwsh(), "-NoProfile", "-File", str(script), "-Target", environment, "-Json"),
+            project.root,
+        )
+        if result.exit_code != 0:
+            self._state_cache[key] = {}
+            return {}
+        try:
+            state = json.loads(result.stdout)
+        except (json.JSONDecodeError, TypeError):
+            state = {}
+        self._state_cache[key] = state if isinstance(state, dict) else {}
+        return self._state_cache[key]
+
+    async def _state_note(
+        self,
+        project: DeploymentProject,
+        environment: DeploymentEnvironment,
+        operation: DeploymentOperation,
+    ) -> str:
+        if project.id != "admin" or environment.key not in {"local", "test"}:
+            return ""
+        state = await self._switch_state(project, environment.key)
+        if not state:
+            return ""
+        airtable = "ON" if state.get("airtableSync", {}).get("enabled") else "OFF"
+        reminders = "ON" if state.get("reportReminders", {}).get("enabled") else "OFF"
+        maintenance = "ON" if state.get("maintenance", {}).get("enabled") else "OFF"
+        if operation.id.startswith("switch.airtable_sync."):
+            return f"Airtable sync is {airtable}"
+        if operation.id.startswith("switch.report_reminders."):
+            return f"Report reminders are {reminders}"
+        if operation.id.startswith("maintenance."):
+            return f"Maintenance mode is {maintenance}"
+        if operation.id == "status.switches":
+            return f"Airtable sync {airtable}; reminders {reminders}; maintenance {maintenance}"
+        return ""
 
     @staticmethod
     def _options(
@@ -200,6 +287,20 @@ class DeployCapability(Capability):
             )
         return tuple(options)
 
+    def _audit(self, project: DeploymentProject) -> PackActionResult:
+        path = project.root / ".ikaika_scripts_configs" / "logs" / "deployment-audit.jsonl"
+        if not path.is_file():
+            self._console.write(f"No audit log yet at {path}.")
+            return PackActionResult(available=True, message="No audit entries.")
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-200:]
+        except OSError as error:
+            self._console.error(str(error))
+            return PackActionResult(available=True, message=str(error), exit_code=1)
+        for line in lines:
+            self._console.write(line)
+        return PackActionResult(available=True, message=f"{len(lines)} audit entries.")
+
     async def _run(
         self,
         project: DeploymentProject,
@@ -208,6 +309,8 @@ class DeployCapability(Capability):
         values: dict[str, OptionValue],
     ) -> PackActionResult:
         if operation.run.type == "internal":
+            if operation.id == "status.audit":
+                return self._audit(project)
             self._console.write(f"{operation.label} is not available in the TUI yet.")
             return PackActionResult(available=True, message=f"{operation.label} is not available yet.")
 
@@ -233,7 +336,7 @@ class DeployCapability(Capability):
             result = await self._process_runner.stream(
                 command,
                 lambda line: self._console.write(f"{RAW_OUTPUT_PREFIX}{line}"),
-                project.root,
+                _run_root(project, operation.run),
             )
             return PackActionResult(
                 available=True,
